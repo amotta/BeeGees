@@ -7,7 +7,37 @@
 .equ	asciiBra = 0x5b
 .equ	asciiSemi = 0x3b
 
-; in:	z	pointer on string FLASH
+; in:	z	pointer on string
+visStatus:
+	; save a0
+	push	a0
+	push	a1
+	
+	; black
+	ldi	a0, 0
+	rcall	visSetColor
+	
+	; set position
+	ldi	a0, 1
+	ldi	a1, 33
+	rcall	visSetPos
+	
+	; clear line
+	rcall	visClear
+	
+	; print string
+	rcall	visPrintString
+	
+	lds	a0, color
+	rcall	visSetColor
+	
+	; restore a0
+	pop	a1
+	pop	a0
+	
+	ret
+
+; in:	z	pointer on string
 visPrintString:
 	; save r0
 	push	a0
@@ -151,6 +181,24 @@ visDraw:
 	pop	a0
 	
 	ret	
+
+; in:	none
+visClear:
+	; save
+	push	a0
+	
+	rcall	visSendCSI
+	
+	ldi	a0, '2'
+	rcall	comSendByte
+	
+	ldi	a0, 'K'
+	rcall	comSendByte
+	
+	; restore
+	pop	a0
+	
+	ret
 	
 ; in:	none
 ; mod:	a0

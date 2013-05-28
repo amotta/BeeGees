@@ -9,8 +9,8 @@
 .equ	touchRight = 3
 .equ	touchSpeed = 4
 
-.equ	touchContrDDR = DDRB
-.equ	touchContrPort = PORTB
+.equ	touchContrDDR = DDRA
+.equ	touchContrPort = PORTA
 
 .dseg
 ; latest pos X
