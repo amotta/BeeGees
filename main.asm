@@ -23,6 +23,9 @@ reset:
 	
 	; enable interrupts
 	sei
+	
+	; init SRAM
+	rcall	sramInit
 
 	; init communication
 	rcall	comInit
@@ -41,17 +44,50 @@ reset:
 .include	"eeprom.asm"
 .include	"vis.asm"
 .include	"touch.asm"
+.include	"sram.asm"
 .include	"math.asm"
 .include	"util.asm"
 
 ; data
 .dseg
-color:	.byte 1
-image:	.byte 2048
+color:
+	.byte 1
+	
+image:
+	.byte 2048
 
 ; code
 .cseg
+
+txtMenu:
+	.db "0 Draw, 1 Color, 2 Save, 3 Load", 0
+	
+txtColor:
+	.db " 0 ", 0x1b, 0x5b, "41m"
+	.db " 1 ", 0x1b, 0x5b, "42m"
+	.db " 2 ", 0x1b, 0x5b, "43m"
+	.db " 3 ", 0x1b, 0x5b, "44m"
+	.db " 4 ", 0x1b, 0x5b, "45m"
+	.db " 5 ", 0x1b, 0x5b, "46m"
+	.db " 6 ", 0x1b, 0x5b, "47m"
+	.db " 7 ", 0
+
+txtLoad:
+	.db "Load from slot [0 ... 3]", 0, 0
+	
+txtLoading:
+	.db "Loading...", 0
+	
+txtSave:
+	.db "Save to slot [0 ... 3]", 0, 0
+
+txtSaving:
+	.db "Saving...", 0
+
 main:
+	lds	a0, touchPosX
+	lds	a1, touchPosY
+	rcall	visSetPos
 	
 bouton0:
 	sbic	PIND, 0			;dessiner / choix 0
@@ -96,11 +132,11 @@ bouton1: 				;couleur / choix 1
 	sbrc	b0, 6
 	rjmp	load
 	
-	ldi	a0, 'g'
-	rcall	comSendByte
-	
 	ori	b0, 0x10		;flag couleur activé
 
+	LDIZ	txtColor << 1
+	rcall	visStatus
+	
 	rjmp	fin_bouton
 
 
@@ -124,7 +160,12 @@ bouton2: 				;enregistrer / choix 2
 	sbrc	b0, 6
 	rjmp	load
 	
-	ori	b0, 0x20			;flag enregistrer activé
+	; save flag
+	ori	b0, 0x20
+	
+	; show save
+	LDIZ	txtSave << 1
+	rcall	visStatus
 
 	rjmp	fin_bouton
 
@@ -149,7 +190,11 @@ bouton3: 				;charger / choix 3
 	sbrc	b0, 6
 	rjmp	load
 	
-	ori	b0, 0x40			;flag charger activé
+	ori	b0, 0x40 ;flag charger activé
+	
+	; show load
+	LDIZ	txtLoad << 1
+	rcall	visStatus
 
 	rjmp	fin_bouton	
 
@@ -222,18 +267,12 @@ bouton7: 				;choix 7
 	rjmp	fin_bouton	
 	
 aucun_bouton:
-	; ldi	a0, 'G'
-	; rcall	comSendByte
-	
 	; aucun bouton appuyé
 	sbr	b0, (1 << 7)
 	rjmp	main
 
 
 fin_bouton:
-	;ldi	a0, 'B'
-	;rcall	comSendByte
-
 	; bouton appuyé
 	cbr	b0, (1 << 7)
 	rjmp	main
@@ -251,6 +290,9 @@ couleur:
 	
 	; display
 	rcall	visSetColor
+	
+	LDIZ	txtMenu << 1
+	rcall	visStatus
 
 	rjmp	fin_bouton
 
@@ -260,7 +302,7 @@ couleur:
 ;	a2	color
 draw:
 	; save to SRAM
-	rcall	toSRAM
+	rcall	sramSave
 	
 	; set position
 	rcall	visSetPos
@@ -272,6 +314,10 @@ draw:
 ; Saves image form SRAM to EEPROM
 ; in:	none
 save:
+	; show saving
+	LDIZ	txtSaving << 1
+	rcall	visStatus
+
 	; set b0 to selected EEPROM slot
 	andi	b0, 0x0f
 	
@@ -318,12 +364,19 @@ saveFor:
 	rjmp	saveFor
 	
 saveEnd:
+	LDIZ	txtMenu << 1
+	rcall	visStatus
+
 	rjmp	fin_bouton
 
 
 ; Reads an image from EEPROM to SRAM
 ; in	b0	EEPROM slot
 load:
+	; show loading
+	LDIZ	txtLoading << 1
+	rcall	visStatus
+
 	andi	b0, 0x0f			;flags (couleur, enregistre, charge) désactivé
 	
 	; set x to b0 * 2^10
@@ -382,44 +435,9 @@ loadFor:
 	rjmp	loadFor
 
 loadEnd:
+	; show done
+	LDIZ	txtMenu << 1
+	rcall	visStatus
+	
 	jmp	fin_bouton
 	
-
-; in:	a0	pos X
-;	a1	pos Y
-;	a2	color
-toSRAM:
-	; save regs
-	push	a0
-	push	a1
-
-	ldi	yl, low(image) 
-	ldi	yh, high(image)
-
-	add	yl, a0
-	brcc	PC + 2
-	inc	yh
-
-	; copy a1 to a0
-	mov	a0, a1
-	clr	a1
-	
-	; set a1:a0 to a0 * 2^6
-	LSL2	a1, a0
-	LSL2	a1, a0
-	LSL2	a1, a0
-	LSL2	a1, a0
-	LSL2	a1, a0
-	LSL2	a1, a0
-
-	add	yl, a0
-	adc	yh, a1
-	
-	; store color to SRAM
-	st	y, a2
-	
-	; restore regs
-	pop	a1
-	pop	a0
-
-	ret
